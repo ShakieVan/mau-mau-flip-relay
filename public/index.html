@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Mau-Mau Flip</title>
+<style>
+	:root { --bg: #f6f0e4; --ink: #2a2230; --soft: #6b6070; --card: #fffaf0; --line: #d9cdb8; --accent: #e0457b; --accent-ink: #fff; }
+	@media (prefers-color-scheme: dark) {
+		:root { --bg: #141428; --ink: #ece6ff; --soft: #a59fc0; --card: #1f1f3a; --line: #3a3a63; --accent: #4fe3d0; --accent-ink: #10101f; }
+	}
+	* { box-sizing: border-box; }
+	html, body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+	main { max-width: 30rem; margin: 0 auto; padding: 1.5rem 16px 2rem; }
+	h1 { font-size: 1.6rem; margin: 0 0 .25rem; letter-spacing: .01em; }
+	h1 span { color: var(--accent); }
+	p { margin: .6rem 0; }
+	.box { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 1rem; margin: 1rem 0; }
+	form { display: flex; gap: .5rem; flex-wrap: wrap; }
+	input { flex: 1 1 10rem; min-width: 0; font: inherit; font-size: 1.3rem; letter-spacing: .08em; text-transform: uppercase; padding: .55rem .7rem;
+		border: 2px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+	button, a.btn { font: inherit; font-weight: 600; padding: .6rem 1.1rem; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-ink);
+		cursor: pointer; text-decoration: none; display: inline-block; }
+	.msg { min-height: 1.4em; color: var(--accent); font-weight: 600; }
+	.soft { color: var(--soft); font-size: .9rem; }
+	code { font-size: 1rem; word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+	<h1>Mau-Mau <span>Flip</span></h1>
+	<p id="lead" class="soft"></p>
+	<div class="box">
+		<form id="f" autocomplete="off">
+			<label for="code" id="code-label" class="soft" style="flex-basis:100%"></label>
+			<input id="code" name="r" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="20" placeholder="KATZE-42">
+			<button id="join" type="submit"></button>
+		</form>
+		<p id="msg" class="msg" role="status" aria-live="polite"></p>
+	</div>
+	<p id="address-label" class="soft"></p>
+	<p><code id="address"></code></p>
+	<p id="about" class="soft"></p>
+</main>
+<script type="module">
+import { TEXTS, lang, looseCode, decide } from './loader.js'
+const T = TEXTS[lang(navigator.language)]
+const $ = (id) => document.getElementById(id)
+document.documentElement.lang = lang(navigator.language)
+document.title = T.title
+$('lead').textContent = T.lead
+$('code-label').textContent = T.code
+$('join').textContent = T.join
+$('address-label').textContent = T.address
+$('address').textContent = location.origin
+$('about').textContent = T.about
+
+async function go(raw) {
+	const code = looseCode(raw)
+	if (!raw) return
+	$('code').value = code || raw
+	if (!code) { $('msg').textContent = T.bad_code; return }
+	$('msg').textContent = T.wait
+	let info = null
+	try {
+		const r = await fetch('/info?room=' + encodeURIComponent(code), { cache: 'no-store' })
+		info = await r.json()
+	} catch (e) { $('msg').textContent = T.net; return }
+	const d = decide(info, code)
+	if (d.action === 'go') { location.replace(d.url + (new URLSearchParams(location.search).get('autotest') ? '&autotest=1' : '')); return }
+	$('msg').textContent = (T[d.why] || T.no_room).replace('{v}', d.version || '?')
+}
+
+$('f').addEventListener('submit', (e) => {
+	e.preventDefault()
+	const code = looseCode($('code').value)
+	if (code) history.replaceState(null, '', '/?r=' + code)
+	go($('code').value)
+})
+const r = new URLSearchParams(location.search).get('r')
+if (r) go(r); else $('code').focus()
+</script>
+</body>
+</html>

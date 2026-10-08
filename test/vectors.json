@@ -1,0 +1,137 @@
+{
+  "_doc": [
+    "Gemeinsame Testvektoren des Vermittlers (docs/online/ENTWURF.md 6). Laufen gegen relay/src/core.js (relay/test/core.test.js, Chrome headless) und gegen den GDScript-Nachbau (game/tests/test_relay_double.gd).",
+    "Jeder Fall beginnt mit einem leeren Raum (kein Speicher, keine Sockets). Zeit t in ms (fehlt t, gilt die vorige). Der Gastgeber-Token beim Anlegen ist 'token', die Herkunft der Links 'origin'.",
+    "Schritte: connect (as = neuer Socket; q = Anfrage mit role, room, create, token, v, proto und agent als User-Agent; lehnt der Raum per HTTP ab, steht der Status in 'http' und es entsteht kein Socket), text (Rohtext des Sockets as; 'fill': n statt text = n-mal 'x'; 'repeat': n = n-mal hintereinander, auch nachdem der Vermittler den Socket geschlossen hat – solche Nachrichten ignoriert er), frame (JSON des Gastgebers as), close (Gegenstelle schließt mit code; danach ist der Socket entfernt), alarm (fälliger Alarm), info (Raum-Info, 'info' = Teilmenge).",
+    "expect: genau alle Ausgaben des Schritts in Reihenfolge. {to, frame} = JSON an einen Gastgeber (Teilmenge; 'absent' = Schlüssel, die fehlen müssen), {to, text} = Rohtext (z. B. an einen Gast), {to, close} = Vermittler schließt den Socket mit diesem Code (danach gilt er als entfernt). 'times': n = n gleiche Ausgaben hintereinander. Beim Beenden werden Sockets in Anmelde-Reihenfolge geschlossen.",
+    "Nach dem Schritt optional: 'alarm' = gesetzte Alarmzeit (null = keiner), 'stored' = meta im Speicher vorhanden. Schließt der Vermittler einen Socket selbst, meldet er das spätere Schließen der Gegenstelle nicht noch einmal. Die Antwort pong auf ping gibt bei Cloudflare die Auto-Antwort, im Kern und im Nachbau der Raum selbst."
+  ],
+  "origin": "https://relay.test",
+  "token": "00112233445566778899aabbccddeeff",
+  "codes": [
+    ["KATZE-42", "KATZE-42"], ["katze 42", "KATZE-42"], ["Katze_42", "KATZE-42"], ["katze42", "KATZE-42"], [" mond-10 ", "MOND-10"],
+    ["Löwe-77", "LOEWE-77"], ["LOEWE 77", "LOEWE-77"], ["Käse-99", "KAESE-99"], ["KATZE-4", ""], ["KATZE-100", ""], ["KATZE-05", ""],
+    ["XYZQ-42", ""], ["", ""], ["42-KATZE", ""], ["KATZE--42", "KATZE-42"]
+  ],
+  "cases": [
+    {"name": "anlegen_beitreten_senden_beenden", "steps": [
+    {"t": 1000000, "do": "connect", "as": "H", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 1}, "expect": [{"to": "H", "frame": {"k": "room", "room": "KATZE-42", "token": "00112233445566778899aabbccddeeff", "link": "https://relay.test/?r=KATZE-42", "limits": {"guests": 16, "msg": 8192, "rate": 20, "grace_s": 600, "life_s": 86400}}}], "alarm": 87400000, "stored": true},
+    {"t": 1001000, "do": "connect", "as": "G1", "q": {"role": "guest", "room": "KATZE-42", "agent": "Test-G1"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 1, "info": {"agent": "Test-G1"}}}]},
+    {"t": 1002000, "do": "connect", "as": "G2", "q": {"role": "guest", "room": "KATZE-42", "agent": "Test-G2"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 2}}]},
+    {"do": "text", "as": "G1", "text": "{\"t\":\"hello\",\"name\":\"Ä\"}", "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "{\"t\":\"hello\",\"name\":\"Ä\"}"}}]},
+    {"do": "frame", "as": "H", "frame": {"k": "send", "c": [1, 2], "d": "{\"t\":\"view\"}"}, "expect": [{"to": "G1", "text": "{\"t\":\"view\"}"}, {"to": "G2", "text": "{\"t\":\"view\"}"}]},
+    {"do": "frame", "as": "H", "frame": {"k": "send", "c": 2, "d": "Y"}, "expect": [{"to": "G2", "text": "Y"}]},
+    {"do": "frame", "as": "H", "frame": {"k": "send", "c": [9], "d": "Z"}, "expect": [{"to": "H", "frame": {"k": "err", "code": "unknown_c", "c": 9}}]},
+    {"do": "text", "as": "G1", "text": "ping", "expect": [{"to": "G1", "text": "pong"}]},
+    {"do": "text", "as": "H", "text": "ping", "expect": [{"to": "H", "text": "pong"}]},
+    {"t": 1003000, "do": "close", "as": "G2", "code": 1000, "expect": [{"to": "H", "frame": {"k": "close", "c": 2, "code": 1000}}]},
+    {"do": "connect", "as": "G3", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 3, "info": {"agent": ""}}}]},
+    {"do": "info", "info": {"open": true, "host": true, "version": "1.2.2"}, "expect": []},
+    {"do": "frame", "as": "H", "frame": {"k": "end"}, "expect": [{"to": "H", "close": 1001}, {"to": "G1", "close": 1001}, {"to": "G3", "close": 1001}], "alarm": null, "stored": false},
+    {"do": "info", "info": {"open": false}, "expect": []},
+    {"do": "connect", "as": "G4", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "G4", "close": 4404}]}
+    ]},
+    {"name": "belegt_und_falsche_anfragen", "steps": [
+    {"t": 1000000, "do": "connect", "as": "G1", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "G1", "close": 4404}], "stored": false},
+    {"do": "connect", "as": "Hx", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "", "proto": 1}, "http": 400, "expect": [], "stored": false},
+    {"do": "connect", "as": "Hy", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 2}, "http": 400, "expect": [], "stored": false},
+    {"do": "connect", "as": "Hz", "q": {"role": "host", "room": "KATZE-42", "token": "00112233445566778899aabbccddeeff"}, "expect": [{"to": "Hz", "close": 4404}]},
+    {"t": 1000000, "do": "connect", "as": "H", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 1}, "expect": [{"to": "H", "frame": {"k": "room", "room": "KATZE-42", "token": "00112233445566778899aabbccddeeff"}}], "alarm": 87400000, "stored": true},
+    {"do": "connect", "as": "H2", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 1}, "http": 409, "expect": []},
+    {"do": "connect", "as": "H3", "q": {"role": "host", "room": "KATZE-42", "token": "ffffffffffffffffffffffffffffffff"}, "expect": [{"to": "H3", "close": 4403}]},
+    {"do": "text", "as": "H", "text": "kein json", "expect": [{"to": "H", "frame": {"k": "err", "code": "bad"}}]},
+    {"do": "frame", "as": "H", "frame": {"k": "zap"}, "expect": [{"to": "H", "frame": {"k": "err", "code": "bad"}}]},
+    {"do": "frame", "as": "H", "frame": {"k": "send", "c": [1], "d": 5}, "expect": [{"to": "H", "frame": {"k": "err", "code": "bad"}}]},
+    {"do": "frame", "as": "H", "frame": {"k": "kick", "c": 7, "code": 1000}, "expect": [{"to": "H", "frame": {"k": "err", "code": "unknown_c", "c": 7}}]}
+    ]},
+    {"name": "gastgeber_weg_und_zurueck", "steps": [
+    {"t": 1000000, "do": "connect", "as": "H", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 1}, "expect": [{"to": "H", "frame": {"k": "room", "room": "KATZE-42"}}]},
+    {"t": 1001000, "do": "connect", "as": "G1", "q": {"role": "guest", "room": "KATZE-42", "agent": "Test-G1"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 1}}]},
+    {"t": 1002000, "do": "close", "as": "H", "code": 1006, "expect": [{"to": "G1", "close": 4503}], "alarm": 1602000, "stored": true},
+    {"do": "info", "info": {"open": true, "host": false, "version": "1.2.2"}, "expect": []},
+    {"t": 1003000, "do": "connect", "as": "G2", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "G2", "close": 4503}]},
+    {"do": "connect", "as": "Hf", "q": {"role": "host", "room": "KATZE-42", "token": "0000000000000000000000000000000f"}, "expect": [{"to": "Hf", "close": 4403}], "alarm": 1602000},
+    {"t": 1010000, "do": "connect", "as": "H2", "q": {"role": "host", "room": "KATZE-42", "token": "00112233445566778899aabbccddeeff"}, "expect": [{"to": "H2", "frame": {"k": "room", "room": "KATZE-42", "link": "https://relay.test/?r=KATZE-42"}, "absent": ["token"]}], "alarm": 87400000, "stored": true},
+    {"do": "info", "info": {"open": true, "host": true}, "expect": []},
+    {"do": "connect", "as": "G1b", "q": {"role": "guest", "room": "KATZE-42", "agent": "Test-G1"}, "expect": [{"to": "H2", "frame": {"k": "open", "c": 2}}]},
+    {"do": "text", "as": "G1b", "text": "hallo", "expect": [{"to": "H2", "frame": {"k": "msg", "c": 2, "d": "hallo"}}]}
+    ]},
+    {"name": "gastgeber_ersetzt", "steps": [
+    {"t": 1000000, "do": "connect", "as": "H", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 1}, "expect": [{"to": "H", "frame": {"k": "room", "room": "KATZE-42"}}]},
+    {"t": 1001000, "do": "connect", "as": "G1", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 1}}]},
+    {"t": 1002000, "do": "connect", "as": "H2", "q": {"role": "host", "room": "KATZE-42", "token": "00112233445566778899aabbccddeeff"}, "expect": [{"to": "H", "close": 4000}, {"to": "H2", "frame": {"k": "room", "room": "KATZE-42"}, "absent": ["token"]}]},
+    {"do": "close", "as": "H", "code": 4000, "expect": [], "alarm": 87400000},
+    {"do": "text", "as": "G1", "text": "noch da", "expect": [{"to": "H2", "frame": {"k": "msg", "c": 1, "d": "noch da"}}]},
+    {"do": "connect", "as": "G2", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "H2", "frame": {"k": "open", "c": 2}}]}
+    ]},
+    {"name": "abwesenheit_abgelaufen", "steps": [
+    {"t": 1000000, "do": "connect", "as": "H", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 1}, "expect": [{"to": "H", "frame": {"k": "room", "room": "KATZE-42"}}]},
+    {"t": 1100000, "do": "close", "as": "H", "code": 1001, "expect": [], "alarm": 1700000},
+    {"t": 1500000, "do": "alarm", "expect": [], "alarm": 1700000, "stored": true},
+    {"t": 1700000, "do": "alarm", "expect": [], "alarm": null, "stored": false},
+    {"do": "connect", "as": "G1", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "G1", "close": 4404}]},
+    {"do": "connect", "as": "H2", "q": {"role": "host", "room": "KATZE-42", "token": "00112233445566778899aabbccddeeff"}, "expect": [{"to": "H2", "close": 4404}]},
+    {"do": "connect", "as": "H3", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.3", "proto": 1}, "expect": [{"to": "H3", "frame": {"k": "room", "room": "KATZE-42", "token": "00112233445566778899aabbccddeeff"}}], "alarm": 88100000, "stored": true},
+    {"do": "info", "info": {"open": true, "host": true, "version": "1.2.3"}, "expect": []}
+    ]},
+    {"name": "lebensdauer", "steps": [
+    {"t": 1000000, "do": "connect", "as": "H", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 1}, "expect": [{"to": "H", "frame": {"k": "room", "room": "KATZE-42"}}]},
+    {"t": 1001000, "do": "connect", "as": "G1", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 1}}]},
+    {"t": 50000000, "do": "alarm", "expect": [], "alarm": 87400000},
+    {"t": 87400000, "do": "alarm", "expect": [{"to": "H", "close": 1001}, {"to": "G1", "close": 1001}], "alarm": null, "stored": false}
+    ]},
+    {"name": "groesse_und_rate", "steps": [
+    {"t": 1000000, "do": "connect", "as": "H", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 1}, "expect": [{"to": "H", "frame": {"k": "room", "room": "KATZE-42"}}]},
+    {"t": 1001000, "do": "connect", "as": "G1", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 1}}]},
+    {"t": 1002000, "do": "text", "as": "G1", "fill": 8193, "expect": [{"to": "H", "frame": {"k": "drop", "c": 1, "why": "size", "size": 8193}}]},
+    {"do": "text", "as": "G1", "text": "ÄÄÄÄÄÄÄÄÄÄ", "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "ÄÄÄÄÄÄÄÄÄÄ"}}]},
+    {"t": 1010000, "do": "text", "as": "G1", "fill": 8192, "repeat": 45, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1}, "times": 40}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate", "size": 8192}, "times": 5}]},
+    {"t": 1010900, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1011800, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1012700, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1013600, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1014500, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1015400, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1016300, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1017200, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1018100, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1019000, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1019900, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "H", "frame": {"k": "drop", "c": 1, "why": "rate"}, "times": 22}]},
+    {"t": 1020800, "do": "text", "as": "G1", "text": "m", "repeat": 40, "expect": [{"to": "H", "frame": {"k": "msg", "c": 1, "d": "m"}, "times": 18}, {"to": "G1", "close": 4429}, {"to": "H", "frame": {"k": "close", "c": 1, "code": 4429}}]},
+    {"do": "close", "as": "G1", "code": 4429, "expect": []},
+    {"do": "frame", "as": "H", "frame": {"k": "send", "c": [1], "d": "weg"}, "expect": [{"to": "H", "frame": {"k": "err", "code": "unknown_c", "c": 1}}]}
+    ]},
+    {"name": "voll", "steps": [
+    {"t": 1000000, "do": "connect", "as": "H", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 1}, "expect": [{"to": "H", "frame": {"k": "room", "room": "KATZE-42"}}]},
+    {"t": 1001000, "do": "connect", "as": "G1", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 1}}]},
+    {"t": 1001000, "do": "connect", "as": "G2", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 2}}]},
+    {"t": 1001000, "do": "connect", "as": "G3", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 3}}]},
+    {"t": 1001000, "do": "connect", "as": "G4", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 4}}]},
+    {"t": 1001000, "do": "connect", "as": "G5", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 5}}]},
+    {"t": 1001000, "do": "connect", "as": "G6", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 6}}]},
+    {"t": 1001000, "do": "connect", "as": "G7", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 7}}]},
+    {"t": 1001000, "do": "connect", "as": "G8", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 8}}]},
+    {"t": 1001000, "do": "connect", "as": "G9", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 9}}]},
+    {"t": 1001000, "do": "connect", "as": "G10", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 10}}]},
+    {"t": 1001000, "do": "connect", "as": "G11", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 11}}]},
+    {"t": 1001000, "do": "connect", "as": "G12", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 12}}]},
+    {"t": 1001000, "do": "connect", "as": "G13", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 13}}]},
+    {"t": 1001000, "do": "connect", "as": "G14", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 14}}]},
+    {"t": 1001000, "do": "connect", "as": "G15", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 15}}]},
+    {"t": 1001000, "do": "connect", "as": "G16", "q": {"role": "guest", "room": "KATZE-42", "agent": "x"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 16}}]},
+    {"do": "connect", "as": "G17", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "G17", "close": 4409}]},
+    {"t": 1002000, "do": "close", "as": "G5", "code": 1001, "expect": [{"to": "H", "frame": {"k": "close", "c": 5, "code": 1001}}]},
+    {"do": "connect", "as": "G18", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 17}}]}
+    ]},
+    {"name": "entfernen_und_zu_gross", "steps": [
+    {"t": 1000000, "do": "connect", "as": "H", "q": {"role": "host", "create": true, "room": "KATZE-42", "v": "1.2.2", "proto": 1}, "expect": [{"to": "H", "frame": {"k": "room", "room": "KATZE-42"}}]},
+    {"t": 1001000, "do": "connect", "as": "G1", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 1}}]},
+    {"t": 1001500, "do": "connect", "as": "G2", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 2}}]},
+    {"t": 1002000, "do": "frame", "as": "H", "frame": {"k": "kick", "c": 1, "code": 4000, "reason": "neue Verbindung"}, "expect": [{"to": "G1", "close": 4000}, {"to": "H", "frame": {"k": "close", "c": 1, "code": 4000}}]},
+    {"do": "close", "as": "G1", "code": 4000, "expect": []},
+    {"do": "frame", "as": "H", "frame": {"k": "kick", "c": 2, "code": 1006}, "expect": [{"to": "G2", "close": 1000}, {"to": "H", "frame": {"k": "close", "c": 2, "code": 1000}}]},
+    {"do": "connect", "as": "G3", "q": {"role": "guest", "room": "KATZE-42"}, "expect": [{"to": "H", "frame": {"k": "open", "c": 3}}]},
+    {"t": 1003000, "do": "text", "as": "H", "fill": 262145, "expect": [{"to": "H", "close": 1009}, {"to": "G3", "close": 4503}], "alarm": 1603000, "stored": true}
+    ]}
+  ]
+}

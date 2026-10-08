@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Vermittler-Kerntest</title>
+<script type="importmap">{ "imports": { "cloudflare:workers": "./cf_stub.js" } }</script>
+</head>
+<body>
+<pre id="out">läuft …</pre>
+<!-- Aufruf über http (Module): tools/webtest/serve.ps1 -Wurzel relay, dann /test/core_test.html; Ergebnis in window.__result -->
+<script type="module" src="./core.test.js"></script>
+</body>
+</html>

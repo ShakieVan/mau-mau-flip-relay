@@ -1,0 +1,28 @@
+// Mau-Mau Flip – Vermittler (Cloudflare Worker + Durable Objects). Bereitstellung über den Deploy-Knopf im README
+// (klont nur diesen Ordner) oder „npm run deploy“. Kein Build-Schritt: src/worker.js ist direkt lauffähig. Den Browser-Client
+// holt der Worker selbst von GitHub (CLIENT_REPO), nach App-Updates ist keine neue Bereitstellung nötig.
+// Durable-Object-Klasse über das deklarative Feld „exports“ (SQLite, Gratistarif). Scheitert das bei der Bereitstellung,
+// „exports“ entfernen und stattdessen eintragen: "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "mau-mau-flip-relay",
+	"main": "src/worker.js",
+	"compatibility_date": "2026-10-01",
+	"exports": {
+		"Room": { "type": "durable-object", "storage": "sqlite" }
+	},
+	"durable_objects": {
+		"bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+	},
+	"assets": {
+		"directory": "./public",
+		"binding": "ASSETS",
+		"not_found_handling": "404-page",
+		"run_worker_first": ["/ws", "/info", "/c/*"]
+	},
+	// Quelle des Browser-Clients: /c/<version>/<datei> = raw.githubusercontent.com/<CLIENT_REPO>/v<version>/webclient/<datei>.
+	// Forks mit eigenem Client tragen hier ihr Repo ein (Form Besitzer/Repo).
+	"vars": { "CLIENT_REPO": "ShakieVan/Mau-Mau-Flip" },
+	// Keine Protokolle: Inhalte, Raumcodes und Tokens sollen nirgends landen.
+	"observability": { "enabled": false }
+}
